@@ -17,6 +17,11 @@ const (
 	EventMTUUpdate
 )
 
+// EtherFrameSize = DST(6) + SRC(6) + ETH_TYPE(2)
+const (
+	EtherFrameSize = 14
+)
+
 type Device interface {
 	// File returns the file descriptor of the device.
 	File() *os.File

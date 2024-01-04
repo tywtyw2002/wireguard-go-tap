@@ -21,13 +21,15 @@ import (
 
 const utunControlName = "com.apple.net.utun_control"
 
-type NativeTun struct {
+type NativeTap struct {
 	name        string
 	tunFile     *os.File
 	events      chan Event
 	errors      chan error
 	routeSocket int
 	closeOnce   sync.Once
+
+	mac 		*macControl
 }
 
 func retryInterfaceByIndex(index int) (iface *net.Interface, err error) {
@@ -42,7 +44,7 @@ func retryInterfaceByIndex(index int) (iface *net.Interface, err error) {
 	return nil, err
 }
 
-func (tun *NativeTun) routineRouteListener(tunIfindex int) {
+func (tun *NativeTap) routineRouteListener(tunIfindex int) {
 	var (
 		statusUp  bool
 		statusMTU int
@@ -141,7 +143,7 @@ func CreateTUN(name string, mtu int) (Device, error) {
 	if err == nil && name == "utun" {
 		fname := os.Getenv("WG_TUN_NAME_FILE")
 		if fname != "" {
-			os.WriteFile(fname, []byte(tun.(*NativeTun).name+"\n"), 0o400)
+			os.WriteFile(fname, []byte(tun.(*NativeTap).name+"\n"), 0o400)
 		}
 	}
 
@@ -149,7 +151,7 @@ func CreateTUN(name string, mtu int) (Device, error) {
 }
 
 func CreateTUNFromFile(file *os.File, mtu int) (Device, error) {
-	tun := &NativeTun{
+	tun := &NativeTap{
 		tunFile: file,
 		events:  make(chan Event, 10),
 		errors:  make(chan error, 5),
@@ -192,7 +194,7 @@ func CreateTUNFromFile(file *os.File, mtu int) (Device, error) {
 	return tun, nil
 }
 
-func (tun *NativeTun) Name() (string, error) {
+func (tun *NativeTap) Name() (string, error) {
 	var err error
 	tun.operateOnFd(func(fd uintptr) {
 		tun.name, err = unix.GetsockoptString(
@@ -209,15 +211,15 @@ func (tun *NativeTun) Name() (string, error) {
 	return tun.name, nil
 }
 
-func (tun *NativeTun) File() *os.File {
+func (tun *NativeTap) File() *os.File {
 	return tun.tunFile
 }
 
-func (tun *NativeTun) Events() <-chan Event {
+func (tun *NativeTap) Events() <-chan Event {
 	return tun.events
 }
 
-func (tun *NativeTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
+func (tun *NativeTap) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 	// TODO: the BSDs look very similar in Read() and Write(). They should be
 	// collapsed, with platform-specific files containing the varying parts of
 	// their implementations.
@@ -235,7 +237,7 @@ func (tun *NativeTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) 
 	}
 }
 
-func (tun *NativeTun) Write(bufs [][]byte, offset int) (int, error) {
+func (tun *NativeTap) Write(bufs [][]byte, offset int) (int, error) {
 	if offset < 4 {
 		return 0, io.ErrShortBuffer
 	}
@@ -259,7 +261,7 @@ func (tun *NativeTun) Write(bufs [][]byte, offset int) (int, error) {
 	return len(bufs), nil
 }
 
-func (tun *NativeTun) Close() error {
+func (tun *NativeTap) Close() error {
 	var err1, err2 error
 	tun.closeOnce.Do(func() {
 		err1 = tun.tunFile.Close()
@@ -276,7 +278,7 @@ func (tun *NativeTun) Close() error {
 	return err2
 }
 
-func (tun *NativeTun) setMTU(n int) error {
+func (tun *NativeTap) setMTU(n int) error {
 	fd, err := socketCloexec(
 		unix.AF_INET,
 		unix.SOCK_DGRAM,
@@ -299,7 +301,7 @@ func (tun *NativeTun) setMTU(n int) error {
 	return nil
 }
 
-func (tun *NativeTun) MTU() (int, error) {
+func (tun *NativeTap) MTU() (int, error) {
 	fd, err := socketCloexec(
 		unix.AF_INET,
 		unix.SOCK_DGRAM,
@@ -319,7 +321,7 @@ func (tun *NativeTun) MTU() (int, error) {
 	return int(ifr.MTU), nil
 }
 
-func (tun *NativeTun) BatchSize() int {
+func (tun *NativeTap) BatchSize() int {
 	return 1
 }
 

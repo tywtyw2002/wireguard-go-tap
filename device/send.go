@@ -226,6 +226,7 @@ func (device *Device) RoutineReadFromTUN() {
 		count       = 0
 		sizes       = make([]int, batchSize)
 		offset      = MessageTransportHeaderSize
+		dstOffset   = offset - tun.EtherFrameSize + 2
 	)
 
 	for i := range elems {
@@ -253,6 +254,8 @@ func (device *Device) RoutineReadFromTUN() {
 			elem := elems[i]
 			elem.packet = bufs[i][offset : offset+sizes[i]]
 
+			// device.log.Verbosef("pkt: %v", elem.packet)
+
 			// lookup peer
 			var peer *Peer
 			switch elem.packet[0] >> 4 {
@@ -260,8 +263,10 @@ func (device *Device) RoutineReadFromTUN() {
 				if len(elem.packet) < ipv4.HeaderLen {
 					continue
 				}
-				dst := elem.packet[IPv4offsetDst : IPv4offsetDst+net.IPv4len]
+				dst := bufs[i][dstOffset : dstOffset + 4]
+				// dst := elem.packet[IPv4offsetDst : IPv4offsetDst+net.IPv4len]
 				peer = device.allowedips.Lookup(dst)
+				// device.log.Verbosef("dst: %v, peer: %v", dst, peer.endpoint.val.DstToString())
 
 			case 6:
 				if len(elem.packet) < ipv6.HeaderLen {
